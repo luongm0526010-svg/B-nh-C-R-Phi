@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 ROBOFLOW_API_KEY = "ZgSNc4xdkTcvj8g4NG1x"  # Khóa API cá nhân của bạn
 WORKSPACE_NAME = "luong-ngoc"
 MODEL_ID = "tilapia-skine-disease-e2qh3"  # ID mô hình từ Roboflow
-VERSION = "1"  # Phiên bản mô hình
+VERSION = "2"  # Phiên bản mô hình
 
 # Đường dẫn URL API để gọi mô hình nhận diện bệnh cá (Lọc lấy độ tự tin từ 20% trở lên)
 URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=20"
