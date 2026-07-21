@@ -1,26 +1,29 @@
-import streamlit as st
-import requests
-from PIL import Image, ImageDraw
-import io
 import base64
+import io
+import requests
+import streamlit as st
+from PIL import Image, ImageDraw
 
-# 1. CẤU HÌNH THÔNG TIN MÔ HÌNH NHẬN DIỆN BỆNH CÁ RÔ PHI (TILAPIA SKIN DISEASE)
-ROBOFLOW_API_KEY = "ZgSNc4xdkTcvj8g4NG1x"  # Khóa API cá nhân của bạn
+# ==========================================
+# 1. CẤU HÌNH THÔNG TIN MÔ HÌNH ROBOFLOW
+# ==========================================
+ROBOFLOW_API_KEY = "ZgSNc4xdkTcvj8g4NG1x"
 WORKSPACE_NAME = "luong-ngoc"
-MODEL_ID = "tilapia-skine-disease-e2qh3"      # ID mô hình mới từ ảnh của bạn
-VERSION = "1"                                 # Phiên bản v2 sau khi bạn đã tối ưu hóa học máy
+MODEL_ID = "tilapia-skine-disease-e2qh3"
+VERSION = "1"
 
-# Đường dẫn URL API để gọi mô hình nhận diện bệnh cá (Lọc lấy độ tự tin cao từ 20% trở lên)
-URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=20"
+# Đặt confidence=50 trực tiếp ở API URL để đồng bộ hoàn toàn với Roboflow Web
+URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=50"
 
-# 2. GIAO DIỆN TRANG WEB STREAMLIT CẬP NHẬT
+# ==========================================
+# 2. GIAO DIỆN PHẦN MỀM STREAMLIT
+# ==========================================
 st.set_page_config(
-    page_title="Hệ thống Chẩn đoán Sức khỏe Cá Rô Phi", 
-    page_icon="🐟", 
-    layout="centered"
+    page_title="Hệ thống Chẩn đoán Sức khỏe Cá Rô Phi",
+    page_icon="🐟",
+    layout="centered",
 )
 
-# Thanh tiêu đề chính và mô tả ngắn gọn về sản phẩm
 st.title("🐟 Ứng Dụng AI Phát Hiện Bệnh Trên Da Cá Rô Phi")
 st.write(
     "Hệ thống thị giác máy tính hỗ trợ người nuôi thủy sản quét bề mặt, "
@@ -29,93 +32,123 @@ st.write(
 
 st.divider()
 
-# Khung chức năng cho phép tải hình ảnh cá lên từ thiết bị
+# Tải ảnh từ người dùng
 uploaded_file = st.file_uploader(
-    "Tải lên hình ảnh cá rô phi cần kiểm tra bệnh lý...", 
-    type=["jpg", "jpeg", "png"]
+    "Tải lên hình ảnh cá rô phi cần kiểm tra bệnh lý...",
+    type=["jpg", "jpeg", "png"],
 )
 
 if uploaded_file is not None:
-    # Mở và chuẩn hóa định dạng ảnh đầu vào sang RGB
     image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Hình ảnh cá rô phi mẫu đang được xử lý", use_container_width=True)
-    
-    # Tạo nút bấm chạy suy luận kiểm tra vết bệnh
+    st.image(
+        image,
+        caption="Hình ảnh cá rô phi mẫu đang được xử lý",
+        use_container_width=True,
+    )
+
     if st.button("Kích hoạt quét bề mặt da cá", type="primary"):
-        with st.spinner("Hệ thống trí tuệ nhân tạo đang phân tích vùng bệnh..."):
+        with st.spinner("Hệ thống trí tuệ nhân tạo đang phân tích..."):
             try:
-                # Chuyển đổi ma trận ảnh sang luồng dữ liệu nhị phân (bytes)
+                # 1. Chuyển ảnh sang dạng Base64 gửi lên API
                 img_byte_arr = io.BytesIO()
-                image.save(img_byte_arr, format='JPEG')
+                image.save(img_byte_arr, format="JPEG")
                 img_bytes = img_byte_arr.getvalue()
-                
-                # Mã hóa chuỗi Base64 truyền tải an toàn qua môi trường web API
-                image_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                
-                # Thực hiện gửi yêu cầu POST request đến cụm server của Roboflow
+                image_base64 = base64.b64encode(img_bytes).decode("utf-8")
+
+                # 2. Gọi API Roboflow
                 response = requests.post(
-                    URL, 
-                    data=image_base64, 
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    URL,
+                    data=image_base64,
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
                 )
                 response.raise_for_status()
-
-                st.write("Status code:", response.status_code)
-
                 result = response.json()
-                st.json(result)
 
                 if "error" in result:
-                    st.error(result["error"])
+                    st.error(f"Lỗi API: {result['error']}")
                     st.stop()
-                   
+
+                # 3. Xử lý kết quả trả về
                 st.divider()
                 st.subheader("📊 Báo cáo kiểm định lâm sàng:")
-                
-                # Trích xuất tập hợp các vùng nghi nhiễm bệnh từ JSON trả về
+
                 predictions = result.get("predictions", [])
-                
-                if len(predictions) > 0:
-                    st.error(f"🚨 CẢNH BÁO: Phát hiện {len(predictions)} vị trí xuất hiện tổn thương hoặc nốt loét bệnh trên da cá!")
-                    
-                    # Chuẩn bị ảnh đích để vẽ bản đồ bounding box
+
+                # Lọc kết quả có độ tin cậy >= 50%
+                valid_predictions = [
+                    p for p in predictions if p.get("confidence", 0) >= 0.5
+                ]
+
+                if len(valid_predictions) > 0:
                     annotated_image = image.copy()
                     draw = ImageDraw.Draw(annotated_image)
-                    
-                    for box in predictions:
-                        # Lấy các thông số hình học tâm (x, y) cùng độ rộng/cao từ Roboflow
-                        x_center = box.get("x")
-                        y_center = box.get("y")
-                        width = box.get("width")
-                        height = box.get("height")
+                    has_disease = False
+
+                    for box in valid_predictions:
+                        class_name = box.get("class", "Unknown")
                         confidence = box.get("confidence", 0) * 100
-                        
-                        # Quy đổi công thức tọa độ về dạng chuẩn Top-Left và Bottom-Right
-                        left = x_center - (width / 2)
-                        top = y_center - (height / 2)
-                        right = x_center + (width / 2)
-                        bottom = y_center + (height / 2)
-                        
-                        # Sử dụng viền màu đỏ đậm nhằm khoanh vùng cảnh báo khẩn cấp
-                        border_color = "#E60000"
-                        
-                        # Tiến hành vẽ hình chữ nhật bao quanh nốt bệnh (nét vẽ đậm = 4)
-                        draw.rectangle([left, top, right, bottom], outline=border_color, width=4)
-                        
-                        # Thiết lập nhãn tiếng Việt đính kèm mức độ chính xác
-                        label_text = f"Vết Nhiễm Bệnh ({confidence:.1f}%)"
-                        draw.text((left + 5, top + 5), label_text, fill=border_color)
-                    
-                    # Trả kết quả ảnh trực quan đã khoanh vùng nốt loét lên ứng dụng web
+
+                        # Tính toán tọa độ Bounding Box
+                        x_center, y_center = box.get("x"), box.get("y")
+                        w, h = box.get("width"), box.get("height")
+                        left = x_center - (w / 2)
+                        top = y_center - (h / 2)
+                        right = x_center + (w / 2)
+                        bottom = y_center + (h / 2)
+
+                        # Tự động chọn Màu và Nhãn theo Class thực tế
+                        if class_name.lower() in [
+                            "healthy-fish",
+                            "healthy",
+                            "ka_khoe",
+                        ]:
+                            border_color = "#00FF00"  # Xanh lá cho cá khỏe
+                            label_text = f"Cá Khỏe Mạnh ({confidence:.1f}%)"
+                        else:
+                            border_color = "#FF0000"  # Đỏ cho cá bệnh
+                            label_text = (
+                                f"Bệnh: {class_name} ({confidence:.1f}%)"
+                            )
+                            has_disease = True
+
+                        # Vẽ khung và nhãn tên class
+                        draw.rectangle(
+                            [left, top, right, bottom],
+                            outline=border_color,
+                            width=4,
+                        )
+                        draw.text(
+                            (left + 5, top + 5), label_text, fill=border_color
+                        )
+
+                    # Đưa ra thông báo phù hợp thực tế
+                    if has_disease:
+                        st.error(
+                            "🚨 CẢNH BÁO: Phát hiện dấu hiệu tổn thương hoặc nốt loét bệnh trên da cá!"
+                        )
+                        st.warning(
+                            "💡 Khuyến nghị kỹ thuật: Cần lập tức cách ly các cá thể bệnh và khử trùng môi trường nước."
+                        )
+                    else:
+                        st.success(
+                            "🎉 KẾT QUẢ TỐT: Cá khỏe mạnh, không phát hiện thấy bất kỳ dấu hiệu bệnh lý nguy hiểm nào."
+                        )
+
                     st.image(
-                        annotated_image, 
-                        caption="Bản đồ định vị tổn thương: Các ô ĐỎ thể hiện vết bệnh đã phát hiện", 
-                        use_container_width=True
+                        annotated_image,
+                        caption="Kết quả phân tích từ AI",
+                        use_container_width=True,
                     )
-                    st.warning("💡 Khuyến nghị kỹ thuật: Đàn cá có tỷ lệ nhiễm khuẩn hoặc xuất huyết cao. Cần lập tức cách ly các cá thể bệnh và khử trùng môi trường nước nuôi.")
+
                 else:
-                    st.success("🎉 KẾT QUẢ TỐT: Bề mặt da mịn màng, không phát hiện thấy bất kỳ dấu hiệu bệnh lý nguy hiểm nào.")
-                    st.image(image, caption="Cá khỏe mạnh bình thường, không có vết thương hở", use_container_width=True)
-                    
+                    st.info(
+                        "ℹ️ Không phát hiện đối tượng nào với độ tin cậy > 50%."
+                    )
+
             except Exception as error_msg:
-                st.error(f"Lỗi hệ thống trong quá trình kết nối API hoặc dựng ảnh đồ họa: {error_msg}")
+                st.error(f"Lỗi hệ thống: {error_msg}")
+
+            except Exception as error_msg:
+                st.error(f"Lỗi hệ thống: {error_msg}")
