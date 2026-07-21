@@ -4,26 +4,23 @@ import requests
 import streamlit as st
 from PIL import Image, ImageDraw
 
-# ==========================================
-# 1. CẤU HÌNH THÔNG TIN MÔ HÌNH ROBOFLOW
-# ==========================================
-ROBOFLOW_API_KEY = "ZgSNc4xdkTcvj8g4NG1x"
+# 1. CẤU HÌNH THÔNG TIN MÔ HÌNH NHẬN DIỆN BỆNH CÁ RÔ PHI (TILAPIA SKIN DISEASE)
+ROBOFLOW_API_KEY = "ZgSNc4xdkTcvj8g4NG1x"  # Khóa API cá nhân của bạn
 WORKSPACE_NAME = "luong-ngoc"
-MODEL_ID = "tilapia-skine-disease-e2qh3"
-VERSION = "1"
+MODEL_ID = "tilapia-skine-disease-e2qh3"  # ID mô hình từ Roboflow
+VERSION = "1"  # Phiên bản mô hình
 
-# Đặt confidence=50 trực tiếp ở API URL để đồng bộ hoàn toàn với Roboflow Web
-URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=50"
+# Đường dẫn URL API để gọi mô hình nhận diện bệnh cá (Lọc lấy độ tự tin từ 20% trở lên)
+URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=20"
 
-# ==========================================
-# 2. GIAO DIỆN PHẦN MỀM STREAMLIT
-# ==========================================
+# 2. GIAO DIỆN TRANG WEB STREAMLIT
 st.set_page_config(
     page_title="Hệ thống Chẩn đoán Sức khỏe Cá Rô Phi",
     page_icon="🐟",
     layout="centered",
 )
 
+# Thanh tiêu đề chính và mô tả ngắn gọn
 st.title("🐟 Ứng Dụng AI Phát Hiện Bệnh Trên Da Cá Rô Phi")
 st.write(
     "Hệ thống thị giác máy tính hỗ trợ người nuôi thủy sản quét bề mặt, "
@@ -32,13 +29,14 @@ st.write(
 
 st.divider()
 
-# Tải ảnh từ người dùng
+# Khung chức năng tải hình ảnh cá lên
 uploaded_file = st.file_uploader(
     "Tải lên hình ảnh cá rô phi cần kiểm tra bệnh lý...",
     type=["jpg", "jpeg", "png"],
 )
 
 if uploaded_file is not None:
+    # Mở và chuẩn hóa định dạng ảnh đầu vào sang RGB
     image = Image.open(uploaded_file).convert("RGB")
     st.image(
         image,
@@ -46,16 +44,21 @@ if uploaded_file is not None:
         use_container_width=True,
     )
 
+    # Nút bấm kích hoạt quét
     if st.button("Kích hoạt quét bề mặt da cá", type="primary"):
-        with st.spinner("Hệ thống trí tuệ nhân tạo đang phân tích..."):
+        with st.spinner(
+            "Hệ thống trí tuệ nhân tạo đang phân tích vùng bệnh..."
+        ):
             try:
-                # 1. Chuyển ảnh sang dạng Base64 gửi lên API
+                # Chuyển đổi ảnh sang dạng nhị phân (bytes)
                 img_byte_arr = io.BytesIO()
                 image.save(img_byte_arr, format="JPEG")
                 img_bytes = img_byte_arr.getvalue()
+
+                # Mã hóa Base64 gửi qua API
                 image_base64 = base64.b64encode(img_bytes).decode("utf-8")
 
-                # 2. Gọi API Roboflow
+                # Gửi request tới Roboflow API
                 response = requests.post(
                     URL,
                     data=image_base64,
@@ -64,91 +67,89 @@ if uploaded_file is not None:
                     },
                 )
                 response.raise_for_status()
+
                 result = response.json()
 
                 if "error" in result:
-                    st.error(f"Lỗi API: {result['error']}")
+                    st.error(result["error"])
                     st.stop()
 
-                # 3. Xử lý kết quả trả về
                 st.divider()
                 st.subheader("📊 Báo cáo kiểm định lâm sàng:")
 
                 predictions = result.get("predictions", [])
 
-                # Lọc kết quả có độ tin cậy >= 50%
-                valid_predictions = [
-                    p for p in predictions if p.get("confidence", 0) >= 0.5
+                # Lọc riêng danh sách vết bệnh (loại bỏ nhãn cá khỏe nếu mô hình nhận diện được)
+                disease_predictions = [
+                    p
+                    for p in predictions
+                    if p.get("class", "").lower()
+                    not in ["healthy-fish", "healthy", "ka_khoe"]
                 ]
 
-                if len(valid_predictions) > 0:
+                # ========================================================
+                # TRƯỜNG HỢP 1: PHÁT HIỆN VẾT BỆNH -> KHOANH MÀU ĐỎ CẢNH BÁO
+                # ========================================================
+                if len(disease_predictions) > 0:
+                    st.error(
+                        f"🚨 CẢNH BÁO: Phát hiện {len(disease_predictions)} vị trí xuất hiện tổn thương hoặc nốt loét bệnh trên da cá!"
+                    )
+
                     annotated_image = image.copy()
                     draw = ImageDraw.Draw(annotated_image)
-                    has_disease = False
 
-                    for box in valid_predictions:
-                        class_name = box.get("class", "Unknown")
+                    for box in disease_predictions:
+                        x_center = box.get("x")
+                        y_center = box.get("y")
+                        width = box.get("width")
+                        height = box.get("height")
                         confidence = box.get("confidence", 0) * 100
+                        class_name = box.get("class", "TonThuong")
 
-                        # Tính toán tọa độ Bounding Box
-                        x_center, y_center = box.get("x"), box.get("y")
-                        w, h = box.get("width"), box.get("height")
-                        left = x_center - (w / 2)
-                        top = y_center - (h / 2)
-                        right = x_center + (w / 2)
-                        bottom = y_center + (h / 2)
+                        left = x_center - (width / 2)
+                        top = y_center - (height / 2)
+                        right = x_center + (width / 2)
+                        bottom = y_center + (height / 2)
 
-                        # Tự động chọn Màu và Nhãn theo Class thực tế
-                        if class_name.lower() in [
-                            "healthy-fish",
-                            "healthy",
-                            "ka_khoe",
-                        ]:
-                            border_color = "#00FF00"  # Xanh lá cho cá khỏe
-                            label_text = f"Cá Khỏe Mạnh ({confidence:.1f}%)"
-                        else:
-                            border_color = "#FF0000"  # Đỏ cho cá bệnh
-                            label_text = (
-                                f"Bệnh: {class_name} ({confidence:.1f}%)"
-                            )
-                            has_disease = True
+                        border_color = "#E60000"  # Viền Đỏ
 
-                        # Vẽ khung và nhãn tên class
                         draw.rectangle(
                             [left, top, right, bottom],
                             outline=border_color,
                             width=4,
                         )
+
+                        label_text = f"Bệnh: {class_name} ({confidence:.1f}%)"
                         draw.text(
                             (left + 5, top + 5), label_text, fill=border_color
                         )
 
-                    # Đưa ra thông báo phù hợp thực tế
-                    if has_disease:
-                        st.error(
-                            "🚨 CẢNH BÁO: Phát hiện dấu hiệu tổn thương hoặc nốt loét bệnh trên da cá!"
-                        )
-                        st.warning(
-                            "💡 Khuyến nghị kỹ thuật: Cần lập tức cách ly các cá thể bệnh và khử trùng môi trường nước."
-                        )
-                    else:
-                        st.success(
-                            "🎉 KẾT QUẢ TỐT: Cá khỏe mạnh, không phát hiện thấy bất kỳ dấu hiệu bệnh lý nguy hiểm nào."
-                        )
-
                     st.image(
                         annotated_image,
-                        caption="Kết quả phân tích từ AI",
+                        caption="Bản đồ định vị tổn thương: Các ô ĐỎ thể hiện vết bệnh đã phát hiện",
+                        use_container_width=True,
+                    )
+                    st.warning(
+                        "💡 Khuyến nghị kỹ thuật: Đàn cá có tỷ lệ nhiễm khuẩn hoặc xuất huyết cao. Cần lập tức cách ly các cá thể bệnh và khử trùng môi trường nước nuôi."
+                    )
+
+                # ========================================================
+                # TRƯỜNG HỢP 2: KHÔNG CÓ VẾT BỆNH -> CÁ KHỎE MANH (THÔNG BÁO XANH)
+                # ========================================================
+                else:
+                    st.success(
+                        "🎉 KẾT QUẢ TỐT: Bề mặt da mịn màng, cá khỏe mạnh và không phát hiện bất kỳ dấu hiệu bệnh lý nguy hiểm nào."
+                    )
+                    st.image(
+                        image,
+                        caption="Cá khỏe mạnh bình thường, không phát hiện vết thương hở",
                         use_container_width=True,
                     )
 
-                else:
-                    st.info(
-                        "ℹ️ Không phát hiện đối tượng nào với độ tin cậy > 50%."
-                    )
-
             except Exception as error_msg:
-                st.error(f"Lỗi hệ thống: {error_msg}")
+                st.error(
+                    f"Lỗi hệ thống trong quá trình kết nối API hoặc dựng ảnh đồ họa: {error_msg}"
+                )
 
             except Exception as error_msg:
                 st.error(f"Lỗi hệ thống: {error_msg}")
