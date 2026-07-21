@@ -8,10 +8,10 @@ import base64
 ROBOFLOW_API_KEY = "ZgSNc4xdkTcvj8g4NG1x"  # Khóa API cá nhân của bạn
 WORKSPACE_NAME = "lam-thi-ngoc-luong-m0526010"
 MODEL_ID = "tilapia-skine-disease-e2qh3"      # ID mô hình mới từ ảnh của bạn
-VERSION = "1"                                 # Phiên bản v2 sau khi bạn đã tối ưu hóa học máy
+VERSION = "2"                                 # Phiên bản v2 sau khi bạn đã tối ưu hóa học máy
 
-# Đường dẫn URL API để gọi mô hình nhận diện bệnh cá (Lọc lấy độ tự tin cao từ 25% trở lên)
-URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=25"
+# Đường dẫn URL API để gọi mô hình nhận diện bệnh cá (Lọc lấy độ tự tin cao từ 40% trở lên)
+URL = f"https://detect.roboflow.com/{MODEL_ID}/{VERSION}?api_key={ROBOFLOW_API_KEY}&confidence=40"
 
 # 2. GIAO DIỆN TRANG WEB STREAMLIT CẬP NHẬT
 st.set_page_config(
